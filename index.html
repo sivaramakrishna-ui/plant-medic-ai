@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Medic AI</title>
+    <!-- Import Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f0f2f6;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            color: #333;
+        }
+
+        h1 { color: #2E7D32; margin-bottom: 10px; }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        /* The camera view */
+        #webcam-container {
+            margin-top: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            display: inline-block;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            background-color: #000;
+            min-height: 300px;
+        }
+
+        canvas {
+            border-radius: 10px;
+            display: block; /* Removes extra space below canvas */
+        }
+
+        /* Buttons */
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+
+        button:hover { background-color: #388E3C; }
+
+        /* Prediction Result Text */
+        #label-container {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* The Medical Advice Box */
+        .advice-box {
+            margin-top: 25px;
+            padding: 20px;
+            border-left: 6px solid #ccc;
+            background-color: #f9f9f9;
+            text-align: left;
+            display: none; /* Hidden until prediction starts */
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .advice-box h3 { margin-top: 0; }
+
+        /* Status Colors for the Box */
+        .healthy { border-color: #4CAF50; background-color: #e8f5e9; color: #1b5e20; }
+        .danger { border-color: #f44336; background-color: #ffebee; color: #b71c1c; }
+        .warning { border-color: #ff9800; background-color: #fff3e0; color: #e65100; }
+
+        .loading {
+            display: none;
+            color: #666;
+            font-style: italic;
+            margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🌿 Plant Medic AI</h1>
+        <p>Point your camera at a plant leaf to detect diseases.</p>
+
+        <button type="button" onclick="init()">Start Camera</button>
+        <div id="loading" class="loading">Loading AI Model...</div>
+        
+        <div id="webcam-container"></div>
+        <div id="label-container"></div>
+        
+        <div id="advice-box" class="advice-box">
+            <h3 id="diagnosis-title">Diagnosis</h3>
+            <p id="diagnosis-text">Waiting for plant...</p>
+        </div>
+    </div>
+
+    <!-- Load TensorFlow.js and Teachable Machine Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    
+    <script type="text/javascript">
+        // -----------------------------------------------------------------
+        // TODO: PASTE YOUR TEACHABLE MACHINE URL HERE
+        // It should look like: "https://teachablemachine.withgoogle.com/models/AbCdEfG/"
+        const URL = "https://teachablemachine.withgoogle.com/models/aEomgFfvV/"; 
+        // -----------------------------------------------------------------
+
+        let model, webcam, labelContainer, maxPredictions;
+
+        // --- THE DOCTOR'S BRAIN (Medical Advice Logic) ---
+        // The keys here (e.g., "Healthy") must match your Teachable Machine Class Names EXACTLY.
+        // If your classes are named "0 Healthy", "1 Rust", the code below handles the numbers automatically.
+        const medicalAdvice = {
+            "Healthy": {
+                class: "healthy",
+                text: "✅ <b>Status:</b> Healthy Plant.<br>Great job! Keep maintaining your current watering and sunlight schedule."
+            },
+            "Powdery Mildew": {
+                class: "warning",
+                text: "⚠️ <b>Issue:</b> Fungal Infection (White Spots).<br><b>Cure:</b> Mix 1 tbsp baking soda with water and spray leaves. Remove badly infected parts."
+            },
+            "Rust": {
+                class: "danger",
+                text: "🚫 <b>Issue:</b> Rust Fungus (Orange/Brown Spots).<br><b>Cure:</b> Isolate this plant immediately! Use a sulfur-based fungicide or neem oil."
+            },
+            "Needs Water": {
+                class: "warning",
+                text: "💧 <b>Issue:</b> Dehydration.<br><b>Cure:</b> Check soil moisture. Water deeply until it runs out the bottom of the pot."
+            }
+        };
+
+        async function init() {
+            if (URL === "PASTE_YOUR_URL_HERE") {
+                alert("⚠️ Please edit the index.html file and paste your Teachable Machine URL inside the code!");
+                return;
+            }
+
+            // Show loading text
+            document.getElementById("loading").style.display = "block";
+
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            try {
+                // Load the model
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                // Setup Webcam
+                const flip = true; 
+                webcam = new tmImage.Webcam(300, 300, flip); // width, height, flip
+                await webcam.setup(); 
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                // Append webcam to screen
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                labelContainer = document.getElementById("label-container");
+                
+                // Hide loading text
+                document.getElementById("loading").style.display = "none";
+            } catch (error) {
+                alert("Error loading model: " + error);
+                document.getElementById("loading").innerText = "Failed to load model.";
+            }
+        }
+
+        async function loop() {
+            webcam.update(); 
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            
+            // Find the class with the highest probability
+            let highestProb = 0;
+            let bestClass = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > highestProb) {
+                    highestProb = prediction[i].probability;
+                    bestClass = prediction[i].className;
+                }
+            }
+
+            // Only update if we are somewhat confident (>80%)
+            if (highestProb > 0.80) {
+                // CLEAN UP NAME: Remove "0 ", "1 " if they exist
+                let cleanName = bestClass; 
+                // Regex: remove digits at start followed by space
+                if(bestClass.match(/^\d/)) {
+                    cleanName = bestClass.replace(/^\d+\s*/, '');
+                }
+
+                // Update the large text label
+                labelContainer.innerHTML = cleanName + " (" + (highestProb * 100).toFixed(0) + "%)";
+                
+                // Update Advice Box
+                const adviceBox = document.getElementById("advice-box");
+                const adviceTitle = document.getElementById("diagnosis-title");
+                const adviceText = document.getElementById("diagnosis-text");
+                
+                adviceBox.style.display = "block";
+                
+                if (medicalAdvice[cleanName]) {
+                    adviceBox.className = "advice-box " + medicalAdvice[cleanName].class;
+                    adviceTitle.innerText = "Diagnosis: " + cleanName;
+                    adviceText.innerHTML = medicalAdvice[cleanName].text;
+                } else {
+                    // Fallback if class name doesn't match dictionary
+                    adviceBox.className = "advice-box";
+                    adviceTitle.innerText = "Detected: " + cleanName;
+                    adviceText.innerText = "No specific medical advice found for this condition.";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
