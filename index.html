@@ -44,8 +44,7 @@
         }
 
         /* Buttons */
-        button {
-            background-color: #4CAF50;
+        .btn {
             color: white;
             border: none;
             padding: 15px 30px;
@@ -58,7 +57,14 @@
             transition: background-color 0.3s;
         }
 
-        button:hover { background-color: #388E3C; }
+        .btn-start { background-color: #4CAF50; }
+        .btn-start:hover { background-color: #388E3C; }
+
+        .btn-switch { 
+            background-color: #2196F3; 
+            display: none; /* Hidden initially */
+        }
+        .btn-switch:hover { background-color: #1976D2; }
 
         /* Prediction Result Text */
         #label-container {
@@ -102,7 +108,10 @@
         <h1>🌿 Plant Medic AI</h1>
         <p>Point your camera at a plant leaf to detect diseases.</p>
 
-        <button type="button" onclick="init()">Start Camera</button>
+        <!-- Buttons -->
+        <button id="start-btn" class="btn btn-start" type="button" onclick="init()">Start Camera</button>
+        <button id="switch-btn" class="btn btn-switch" type="button" onclick="switchCamera()">🔄 Switch Camera</button>
+        
         <div id="loading" class="loading">Loading AI Model...</div>
         
         <div id="webcam-container"></div>
@@ -126,10 +135,10 @@
         // -----------------------------------------------------------------
 
         let model, webcam, labelContainer, maxPredictions;
+        let isBackCamera = false; // Track which camera is active
+        let requestID; // To stop the loop when switching
 
         // --- THE DOCTOR'S BRAIN (Medical Advice Logic) ---
-        // The keys here (e.g., "Healthy") must match your Teachable Machine Class Names EXACTLY.
-        // If your classes are named "0 Healthy", "1 Rust", the code below handles the numbers automatically.
         const medicalAdvice = {
             "Healthy": {
                 class: "healthy",
@@ -155,40 +164,75 @@
                 return;
             }
 
-            // Show loading text
+            // Hide Start button, Show Loading
+            document.getElementById("start-btn").style.display = "none";
             document.getElementById("loading").style.display = "block";
 
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
 
             try {
-                // Load the model
+                // 1. Load the model (only needs to happen once)
                 model = await tmImage.load(modelURL, metadataURL);
                 maxPredictions = model.getTotalClasses();
 
-                // Setup Webcam
-                const flip = true; 
-                webcam = new tmImage.Webcam(300, 300, flip); // width, height, flip
-                await webcam.setup(); 
-                await webcam.play();
-                window.requestAnimationFrame(loop);
+                // 2. Setup Camera
+                await setupWebcam();
 
-                // Append webcam to screen
-                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                // 3. UI Cleanup
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("switch-btn").style.display = "inline-block"; // Show switch button
                 labelContainer = document.getElementById("label-container");
                 
-                // Hide loading text
-                document.getElementById("loading").style.display = "none";
             } catch (error) {
-                alert("Error loading model: " + error);
-                document.getElementById("loading").innerText = "Failed to load model.";
+                alert("Error: " + error);
+                document.getElementById("loading").innerText = "Failed to load system.";
+                document.getElementById("start-btn").style.display = "inline-block";
             }
+        }
+
+        async function setupWebcam() {
+            // Stop existing webcam if running
+            if (webcam) {
+                if(requestID) window.cancelAnimationFrame(requestID);
+                await webcam.stop();
+                document.getElementById("webcam-container").innerHTML = ""; // Clear canvas
+            }
+
+            // Prepare constraints
+            // Flip = true if front camera (mirror effect), false if back camera (natural)
+            const flip = !isBackCamera; 
+            const width = 300;
+            const height = 300;
+            
+            webcam = new tmImage.Webcam(width, height, flip); 
+            
+            // Explicitly request User (front) or Environment (back) camera
+            const constraints = {
+                facingMode: isBackCamera ? "environment" : "user"
+            };
+
+            try {
+                await webcam.setup(constraints); 
+                await webcam.play();
+                requestID = window.requestAnimationFrame(loop);
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+            } catch (err) {
+                alert("Camera Error: " + err);
+            }
+        }
+
+        async function switchCamera() {
+            // Toggle the state
+            isBackCamera = !isBackCamera;
+            // Restart the webcam with new settings
+            await setupWebcam();
         }
 
         async function loop() {
             webcam.update(); 
             await predict();
-            window.requestAnimationFrame(loop);
+            requestID = window.requestAnimationFrame(loop);
         }
 
         async function predict() {
@@ -209,12 +253,10 @@
             if (highestProb > 0.80) {
                 // CLEAN UP NAME: Remove "0 ", "1 " if they exist
                 let cleanName = bestClass; 
-                // Regex: remove digits at start followed by space
                 if(bestClass.match(/^\d/)) {
                     cleanName = bestClass.replace(/^\d+\s*/, '');
                 }
 
-                // Update the large text label
                 labelContainer.innerHTML = cleanName + " (" + (highestProb * 100).toFixed(0) + "%)";
                 
                 // Update Advice Box
@@ -229,7 +271,6 @@
                     adviceTitle.innerText = "Diagnosis: " + cleanName;
                     adviceText.innerHTML = medicalAdvice[cleanName].text;
                 } else {
-                    // Fallback if class name doesn't match dictionary
                     adviceBox.className = "advice-box";
                     adviceTitle.innerText = "Detected: " + cleanName;
                     adviceText.innerText = "No specific medical advice found for this condition.";
