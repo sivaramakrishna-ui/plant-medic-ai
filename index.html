@@ -3,9 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plant Medic AI</title>
+    <title>Doctor Plant AI</title>
     <!-- Import Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/628/628283.png">
+
     <style>
         body {
             font-family: 'Poppins', sans-serif;
@@ -16,7 +20,7 @@
             color: #333;
         }
 
-        h1 { color: #2E7D32; margin-bottom: 10px; }
+        h1 { color: #2E7D32; margin-bottom: 5px; }
         
         .container {
             max-width: 600px;
@@ -25,6 +29,15 @@
             padding: 20px;
             border-radius: 15px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        /* --- NEW: App Icon Styling --- */
+        .app-icon {
+            width: 80px;  /* Adjust size here */
+            height: 80px;
+            border-radius: 15px; /* Rounded corners */
+            margin: 10px auto;
+            display: block;
         }
 
         /* The camera view */
@@ -40,7 +53,7 @@
 
         canvas {
             border-radius: 10px;
-            display: block; /* Removes extra space below canvas */
+            display: block; 
         }
 
         /* Buttons */
@@ -62,7 +75,7 @@
 
         .btn-switch { 
             background-color: #2196F3; 
-            display: none; /* Hidden initially */
+            display: none; 
         }
         .btn-switch:hover { background-color: #1976D2; }
 
@@ -81,14 +94,13 @@
             border-left: 6px solid #ccc;
             background-color: #f9f9f9;
             text-align: left;
-            display: none; /* Hidden until prediction starts */
+            display: none; 
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
 
         .advice-box h3 { margin-top: 0; }
 
-        /* Status Colors for the Box */
         .healthy { border-color: #4CAF50; background-color: #e8f5e9; color: #1b5e20; }
         .danger { border-color: #f44336; background-color: #ffebee; color: #b71c1c; }
         .warning { border-color: #ff9800; background-color: #fff3e0; color: #e65100; }
@@ -105,7 +117,12 @@
 <body>
 
     <div class="container">
-        <h1>🌿 Plant Medic AI</h1>
+        <h1>Doctor Plant AI</h1>
+        
+        <!-- THIS IS YOUR ICON -->
+        <!-- Replace the link below with "icon.png" if you have your own file -->
+        <img src="icon.png" alt="App Icon" class="app-icon">
+
         <p>Point your camera at a plant leaf to detect diseases.</p>
 
         <!-- Buttons -->
@@ -123,22 +140,20 @@
         </div>
     </div>
 
-    <!-- Load TensorFlow.js and Teachable Machine Library -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     
     <script type="text/javascript">
         // -----------------------------------------------------------------
         // TODO: PASTE YOUR TEACHABLE MACHINE URL HERE
-        // It should look like: "https://teachablemachine.withgoogle.com/models/AbCdEfG/"
         const URL = "https://teachablemachine.withgoogle.com/models/aEomgFfvV/"; 
         // -----------------------------------------------------------------
 
         let model, webcam, labelContainer, maxPredictions;
-        let isBackCamera = false; // Track which camera is active
-        let requestID; // To stop the loop when switching
+        let isBackCamera = false; 
+        let requestID; 
 
-        // --- THE DOCTOR'S BRAIN (Medical Advice Logic) ---
+        // --- THE DOCTOR'S BRAIN ---
         const medicalAdvice = {
             "Healthy": {
                 class: "healthy",
@@ -164,7 +179,6 @@
                 return;
             }
 
-            // Hide Start button, Show Loading
             document.getElementById("start-btn").style.display = "none";
             document.getElementById("loading").style.display = "block";
 
@@ -172,18 +186,12 @@
             const metadataURL = URL + "metadata.json";
 
             try {
-                // 1. Load the model (only needs to happen once)
                 model = await tmImage.load(modelURL, metadataURL);
                 maxPredictions = model.getTotalClasses();
-
-                // 2. Setup Camera
                 await setupWebcam();
-
-                // 3. UI Cleanup
                 document.getElementById("loading").style.display = "none";
-                document.getElementById("switch-btn").style.display = "inline-block"; // Show switch button
+                document.getElementById("switch-btn").style.display = "inline-block"; 
                 labelContainer = document.getElementById("label-container");
-                
             } catch (error) {
                 alert("Error: " + error);
                 document.getElementById("loading").innerText = "Failed to load system.";
@@ -192,22 +200,17 @@
         }
 
         async function setupWebcam() {
-            // Stop existing webcam if running
             if (webcam) {
                 if(requestID) window.cancelAnimationFrame(requestID);
                 await webcam.stop();
-                document.getElementById("webcam-container").innerHTML = ""; // Clear canvas
+                document.getElementById("webcam-container").innerHTML = ""; 
             }
 
-            // Prepare constraints
-            // Flip = true if front camera (mirror effect), false if back camera (natural)
             const flip = !isBackCamera; 
             const width = 300;
             const height = 300;
-            
             webcam = new tmImage.Webcam(width, height, flip); 
             
-            // Explicitly request User (front) or Environment (back) camera
             const constraints = {
                 facingMode: isBackCamera ? "environment" : "user"
             };
@@ -223,9 +226,7 @@
         }
 
         async function switchCamera() {
-            // Toggle the state
             isBackCamera = !isBackCamera;
-            // Restart the webcam with new settings
             await setupWebcam();
         }
 
@@ -238,7 +239,6 @@
         async function predict() {
             const prediction = await model.predict(webcam.canvas);
             
-            // Find the class with the highest probability
             let highestProb = 0;
             let bestClass = "";
 
@@ -249,9 +249,7 @@
                 }
             }
 
-            // Only update if we are somewhat confident (>80%)
             if (highestProb > 0.80) {
-                // CLEAN UP NAME: Remove "0 ", "1 " if they exist
                 let cleanName = bestClass; 
                 if(bestClass.match(/^\d/)) {
                     cleanName = bestClass.replace(/^\d+\s*/, '');
@@ -259,7 +257,6 @@
 
                 labelContainer.innerHTML = cleanName + " (" + (highestProb * 100).toFixed(0) + "%)";
                 
-                // Update Advice Box
                 const adviceBox = document.getElementById("advice-box");
                 const adviceTitle = document.getElementById("diagnosis-title");
                 const adviceText = document.getElementById("diagnosis-text");
